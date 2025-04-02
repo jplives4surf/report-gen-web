@@ -19,8 +19,7 @@ A Python tool to generate multiple Word documents by merging Excel data into a W
 git clone https://github.com/yourusername/report-generator.git
 cd report-generator
 
-**## USAAGE**
-
+## Usage
 Place your Excel data and Word template in the Inputs directory
 Run the script:
 
