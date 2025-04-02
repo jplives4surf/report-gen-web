@@ -16,7 +16,7 @@ A Python tool to generate multiple Word documents by merging Excel data into a W
 ## Installation
 1. Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/report-generator.git
+    git clone https://github.com/jplives4surf/report-generator.git
     cd report-generator
     ```
 
