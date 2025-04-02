@@ -1,0 +1,163 @@
+{
+  "version": "1.0.0",
+  "description": "Report Generator Flow",
+  "data": {
+    "nodes": [
+      {
+        "id": "load_excel_data",
+        "type": "CustomComponent",
+        "position": {
+          "x": 100,
+          "y": 100
+        },
+        "data": {
+          "name": "Load Excel Data",
+          "description": "Loads data from an Excel file",
+          "code": "def load_excel_data_component(excel_file):\n    import pandas as pd\n    import os\n    from pathlib import Path\n    \n    file_path = Path(os.path.abspath(\"Inputs\")) / excel_file\n    if not file_path.exists():\n        raise FileNotFoundError(f\"Excel file not found at {file_path}\")\n    \n    df = pd.read_excel(file_path)\n    df.columns = [col.strip('{}') for col in df.columns]\n    if 'processed' not in df.columns:\n        df['processed'] = ''\n    df['processed'] = df['processed'].astype(str)\n    return df",
+          "inputs": {
+            "excel_file": {
+              "type": "str",
+              "required": true
+            }
+          },
+          "output_types": {
+            "df": "pd.DataFrame"
+          }
+        }
+      },
+      {
+        "id": "load_template",
+        "type": "CustomComponent",
+        "position": {
+          "x": 100,
+          "y": 300
+        },
+        "data": {
+          "name": "Load Template",
+          "description": "Loads a Word template",
+          "code": "def load_template_component(template_file):\n    import os\n    from pathlib import Path\n    from docx import Document\n    \n    template_path = Path(os.path.abspath(\"Inputs\")) / template_file\n    if not template_path.exists():\n        raise FileNotFoundError(f\"Template file not found at {template_path}\")\n    \n    return Document(template_path)",
+          "inputs": {
+            "template_file": {
+              "type": "str",
+              "required": true
+            }
+          },
+          "output_types": {
+            "template": "docx.Document"
+          }
+        }
+      },
+      {
+        "id": "replace_fields",
+        "type": "CustomComponent",
+        "position": {
+          "x": 400,
+          "y": 200
+        },
+        "data": {
+          "name": "Replace Fields",
+          "description": "Replaces placeholders in the document with data",
+          "code": "def replace_fields_component(document, data_row):\n    import pandas as pd\n    \n    for paragraph in document.paragraphs:\n        for key, value in data_row.items():\n            str_value = str(value) if pd.notna(value) else \"\"\n            placeholder = f\"{{{key}}}\"\n            if placeholder in paragraph.text:\n                paragraph.text = paragraph.text.replace(placeholder, str_value)\n    \n    for table in document.tables:\n        for row in table.rows:\n            for cell in row.cells:\n                for key, value in data_row.items():\n                    str_value = str(value) if pd.notna(value) else \"\"\n                    placeholder = f\"{{{key}}}\"\n                    if placeholder in cell.text:\n                        cell.text = cell.text.replace(placeholder, str_value)\n    \n    return document",
+          "inputs": {
+            "document": {
+              "type": "docx.Document",
+              "required": true
+            },
+            "data_row": {
+              "type": "dict",
+              "required": true
+            }
+          },
+          "output_types": {
+            "report_doc": "docx.Document"
+          }
+        }
+      },
+      {
+        "id": "generate_reports",
+        "type": "CustomComponent",
+        "position": {
+          "x": 700,
+          "y": 100
+        },
+        "data": {
+          "name": "Generate Reports",
+          "description": "Generates reports by combining data and templates",
+          "code": "def generate_reports_component(df, excel_file, template_file):\n    import pandas as pd\n    import os\n    from pathlib import Path\n    from datetime import datetime\n    from docx import Document\n    \n    def load_template_component(template_file):\n        template_path = Path(os.path.abspath(\"Inputs\")) / template_file\n        if not template_path.exists():\n            raise FileNotFoundError(f\"Template file not found at {template_path}\")\n        return Document(template_path)\n    \n    def replace_fields_component(document, data_row):\n        for paragraph in document.paragraphs:\n            for key, value in data_row.items():\n                str_value = str(value) if pd.notna(value) else \"\"\n                placeholder = f\"{{{key}}}\"\n                if placeholder in paragraph.text:\n                    paragraph.text = paragraph.text.replace(placeholder, str_value)\n        \n        for table in document.tables:\n            for row in table.rows:\n                for cell in row.cells:\n                    for key, value in data_row.items():\n                        str_value = str(value) if pd.notna(value) else \"\"\n                        placeholder = f\"{{{key}}}\"\n                        if placeholder in cell.text:\n                            cell.text = cell.text.replace(placeholder, str_value)\n        \n        return document\n    \n    timestamp = datetime.now().strftime(\"%Y%m%d_%H%M%S\")\n    processed_count = 0\n    \n    for index, row in df.iterrows():\n        if pd.notna(row['processed']) and row['processed'] != '':\n            print(f\"Skipping row {index + 1} because 'processed' column is not empty ('{row['processed']}').\")\n            continue\n        \n        current_template_doc = load_template_component(template_file)\n        report_doc = replace_fields_component(current_template_doc, row)\n        output_filename = f\"report_{timestamp}_{index + 1}.docx\"\n        output_path = Path(os.path.abspath(\"Outputs\")) / output_filename\n        \n        report_doc.save(output_path)\n        print(f\"Generated report file: {output_path}\")\n        processed_count += 1\n        \n        try:\n            df.loc[index, 'processed'] = output_filename\n        except Exception as e:\n            print(f\"Error updating DataFrame in memory for row {index + 1}: {e}\")\n\n    try:\n        df.to_excel(Path(os.path.abspath(\"Inputs\")) / excel_file, index=False)\n        print(f\"Successfully attempted to save updates to {excel_file}\")\n    except PermissionError:\n        print(f\"\\n[ERROR] Permission denied: Could not save updates to {excel_file}. Please ensure the file is closed and not open in another program, then run the script again.\")\n    except Exception as e:\n        print(f\"\\n[ERROR] Failed to save updates to {excel_file}: {e}\")\n\n    return f\"Processed {processed_count} new reports. Total rows in Excel: {len(df)}.\"",
+          "inputs": {
+            "df": {
+              "type": "pd.DataFrame",
+              "required": true
+            },
+            "excel_file": {
+              "type": "str",
+              "required": true
+            },
+            "template_file": {
+              "type": "str",
+              "required": true
+            }
+          },
+          "output_types": {
+            "result": "str"
+          }
+        }
+      },
+      {
+        "id": "file_selector",
+        "type": "InputComponent",
+        "position": {
+          "x": 100,
+          "y": 500
+        },
+        "data": {
+          "name": "File Selector",
+          "description": "Select Excel and Word template files",
+          "inputs": {},
+          "output_types": {
+            "excel_file": "str",
+            "template_file": "str"
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "file_selector",
+        "sourceHandle": "excel_file",
+        "target": "load_excel_data",
+        "targetHandle": "excel_file"
+      },
+      {
+        "source": "file_selector",
+        "sourceHandle": "template_file",
+        "target": "load_template",
+        "targetHandle": "template_file"
+      },
+      {
+        "source": "file_selector",
+        "sourceHandle": "excel_file",
+        "target": "generate_reports",
+        "targetHandle": "excel_file"
+      },
+      {
+        "source": "file_selector",
+        "sourceHandle": "template_file",
+        "target": "generate_reports",
+        "targetHandle": "template_file"
+      },
+      {
+        "source": "load_excel_data",
+        "sourceHandle": "df",
+        "target": "generate_reports",
+        "targetHandle": "df"
+      },
+      {
+        "source": "load_template",
+        "sourceHandle": "template",
+        "target": "replace_fields",
+        "targetHandle": "document"
+      }
+    ]
+  }
+}

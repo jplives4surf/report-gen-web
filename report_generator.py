@@ -5,9 +5,9 @@ from pathlib import Path
 from datetime import datetime
 
 class ReportGenerator:
-    def __init__(self, input_dir="../Inputs", output_dir="../Outputs"):
-        self.input_dir = Path(input_dir)
-        self.output_dir = Path(output_dir)
+    def __init__(self, input_dir="Inputs", output_dir="Outputs"):
+        self.input_dir = Path(os.path.abspath(input_dir))
+        self.output_dir = Path(os.path.abspath(output_dir))
         
         self.input_dir.mkdir(exist_ok=True)
         self.output_dir.mkdir(exist_ok=True)
@@ -19,6 +19,10 @@ class ReportGenerator:
         
         df = pd.read_excel(file_path)
         df.columns = [col.strip('{}') for col in df.columns]
+        if 'processed' not in df.columns:
+            df['processed'] = ''
+        # Ensure the 'processed' column is treated as string type to avoid dtype warnings
+        df['processed'] = df['processed'].astype(str) 
         return df
 
     def load_template(self, template_file):
@@ -29,18 +33,14 @@ class ReportGenerator:
         return Document(template_path)
 
     def replace_fields(self, document, data_row):
-        doc = Document()
-        for element in document.element.body:
-            doc.element.body.append(element)
-            
-        for paragraph in doc.paragraphs:
+        for paragraph in document.paragraphs:
             for key, value in data_row.items():
                 str_value = str(value) if pd.notna(value) else ""
                 placeholder = f"{{{key}}}"
                 if placeholder in paragraph.text:
                     paragraph.text = paragraph.text.replace(placeholder, str_value)
         
-        for table in doc.tables:
+        for table in document.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for key, value in data_row.items():
@@ -49,23 +49,52 @@ class ReportGenerator:
                         if placeholder in cell.text:
                             cell.text = cell.text.replace(placeholder, str_value)
         
-        return doc
+        return document
 
-    def generate_reports(self, excel_file, template_file):
-        df = self.load_excel_data(excel_file)
+    def generate_reports(self, df, excel_file, template_file):
         template = self.load_template(template_file)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        processed_count = 0 # Keep track of newly processed reports
         
         for index, row in df.iterrows():
-            report_doc = self.replace_fields(template, row)
+            # More robust check for already processed rows (handles NaN and empty strings)
+            if pd.notna(row['processed']) and row['processed'] != '': 
+                print(f"Skipping row {index + 1} because 'processed' column is not empty ('{row['processed']}').")
+                continue
+            
+            # Create a fresh template instance for each report to avoid cumulative changes
+            current_template_doc = self.load_template(template_file) 
+            report_doc = self.replace_fields(current_template_doc, row)
             output_filename = f"report_{timestamp}_{index + 1}.docx"
             output_path = self.output_dir / output_filename
             
             report_doc.save(output_path)
-            print(f"Generated report: {output_path}")
+            print(f"Generated report file: {output_path}") # Console output includes filename
+            processed_count += 1
+            
+            try:
+                # Update 'processed' column with the generated filename
+                df.loc[index, 'processed'] = output_filename 
+                # print(f"DEBUG: Set df.loc[{index}, 'processed'] = {output_filename}") # Optional debug print
+            except Exception as e: # Catch potential errors during DataFrame update
+                 print(f"Error updating DataFrame in memory for row {index + 1}: {e}")
+
         
-        return f"Generated {len(df)} reports successfully"
+        try:
+            # Attempt to save all changes back to the Excel file
+            df.to_excel(self.input_dir / excel_file, index=False)
+            print(f"Successfully attempted to save updates to {excel_file}") 
+        except PermissionError:
+            # Explicit message if saving fails due to permissions
+            print(f"\n[ERROR] Permission denied: Could not save updates to {excel_file}. Please ensure the file is closed and not open in another program, then run the script again.")
+        except Exception as e:
+            # Catch other potential saving errors
+            print(f"\n[ERROR] Failed to save updates to {excel_file}: {e}")
+
+            
+        # Return message reflects newly generated reports
+        return f"Processed {processed_count} new reports. Total rows in Excel: {len(df)}."
 
 def get_file_selection(directory, extension):
     files = [f for f in os.listdir(directory) if f.endswith(extension)]
@@ -104,7 +133,8 @@ def main():
         confirm = input("Proceed with these files? (y/n): ").lower()
         
         if confirm == 'y':
-            result = generator.generate_reports(excel_file, template_file)
+            df = generator.load_excel_data(excel_file)
+            result = generator.generate_reports(df, excel_file, template_file)
             print(result)
         else:
             print("Operation cancelled.")
