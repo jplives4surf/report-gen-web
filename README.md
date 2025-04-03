@@ -10,15 +10,20 @@ This application provides a user-friendly web interface for generating reports f
 
 - **Web-based Interface**: Easy-to-use Streamlit interface accessible from any browser
 - **Interactive File Upload**: Drag-and-drop Excel data files and Word templates
-- **Batch Processing**: Generate multiple reports at once from Excel data rows
-- **Progress Tracking**: Keeps track of processed rows in the Excel file
-- **Download Options**: 
-  - Download individual reports
-  - Download all reports as a ZIP file
-  - Download updated Excel file with processing status
-- **Smart Processing**: Only processes rows that haven't been processed before
-- **Template System**: Uses placeholders in Word templates that get replaced with Excel data
-- **Support for Complex Documents**: Handles placeholders in both paragraphs and tables
+- **Tabbed Interface**: Organizes functionalities into "Create Report" and "Create Intake XLS" tabs.
+- **Report Generation**:
+  - Batch Processing: Generate multiple reports at once from Excel data rows
+  - Progress Tracking: Keeps track of processed rows in the Excel file
+  - Download Options:
+    - Download individual reports
+    - Download all reports as a ZIP file
+    - Download updated Excel file with processing status
+  - Smart Processing: Only processes rows that haven't been processed before
+  - Template System: Uses placeholders in Word templates that get replaced with Excel data
+  - Support for Complex Documents: Handles placeholders in both paragraphs and tables
+  - Date Formatting: Dates in reports are formatted without timestamps.
+- **Intake Template Creation**:
+  - Generates an Excel template from a Word document, using placeholders enclosed in square brackets `[]` as column headers.
 
 ## Requirements
 
@@ -58,13 +63,21 @@ This application provides a user-friendly web interface for generating reports f
    - Click "Generate Reports" to process the data
    - Download individual reports, a ZIP of all reports, or the updated Excel file
 
-## Template Format
+## Template Formats
 
+### Report Generation
 In your Word template, use double curly braces for placeholders that will be replaced with data from your Excel file:
 
 - Example: `{{first_name}}` will be replaced with the value from the "first_name" column
 - Placeholders are case-insensitive
 - Placeholders work in both regular paragraphs and table cells
+
+### Intake Template Creation
+
+In your Word template, use square brackets for placeholders that will be used as column headers in the generated Excel template:
+
+- Example: `[first_name]` will create a column named "first_name" in the Excel template.
+- Placeholders are case-insensitive.
 
 ## How It Works
 
