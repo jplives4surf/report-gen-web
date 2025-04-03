@@ -159,82 +159,141 @@ if uploaded_excel is not None and uploaded_template is not None:
         st.session_state.updated_excel_bytes = None
         st.session_state.updated_excel_filename = None
 
+        # Create a status area that will be updated during processing
+        status_area = st.empty()
+        status_area.info("Starting report generation process...")
+        
+        # Create a log area for detailed messages
+        log_container = st.container()
+        with log_container:
+            st.subheader("Processing Log")
+            log_area = st.empty()
+            log_messages = []
+            
+            def add_log(message):
+                log_messages.append(f"{datetime.now().strftime('%H:%M:%S')} - {message}")
+                log_area.code("\n".join(log_messages), language="")
+
         try:
-            with st.spinner("Processing... Please wait."):
-                # Load Excel data
-                excel_bytes = io.BytesIO(uploaded_excel.getvalue())
-                df = pd.read_excel(excel_bytes)
-                st.session_state.total_rows = len(df)
+            # Load Excel data
+            add_log(f"Loading Excel file: {uploaded_excel.name}")
+            status_area.info("Loading Excel data...")
+            excel_bytes = io.BytesIO(uploaded_excel.getvalue())
+            df = pd.read_excel(excel_bytes)
+            st.session_state.total_rows = len(df)
+            add_log(f"Found {len(df)} rows in Excel file")
 
-                # Get the original filename
-                original_filename = uploaded_excel.name
+            # Get the original filename
+            original_filename = uploaded_excel.name
 
-                # Clean column names
-                df.columns = [str(col).strip('{}') for col in df.columns]
+            # Clean column names
+            add_log("Cleaning column names")
+            df.columns = [str(col).strip('{}') for col in df.columns]
+            add_log(f"Columns: {', '.join(df.columns.tolist())}")
 
-                # Check for 'processed' column, add if missing
-                if 'processed' not in df.columns:
-                    df['processed'] = ''
-                # Ensure 'processed' is string type to handle various empty values consistently
-                df['processed'] = df['processed'].fillna('').astype(str)
-
-                # Store the original excel data in session state
-                st.session_state.excel_data = df.copy()
-
-                # Load template bytes once
-                template_bytes = io.BytesIO(uploaded_template.getvalue())
-
-                # Generate individual reports and store them
-                timestamp_run = datetime.now().strftime("%Y%m%d_%H%M%S")
-                for index, row in df.iterrows():
-                    # Check if row should be processed
-                    if row['processed'] != '':
-                        st.session_state.skipped_count += 1
-                        continue  # Skip if 'processed' column is not empty
-
-                    # Load a fresh template instance for each report
-                    template_bytes.seek(0)  # Reset stream position
-                    document = Document(template_bytes)
-                    report_doc = replace_fields(document, row.to_dict())
-
-                    # Save the generated document to a temporary byte stream
-                    doc_buffer = io.BytesIO()
-                    report_doc.save(doc_buffer)
-                    doc_buffer.seek(0)
-
-                    # Store the generated report
-                    output_filename = f"report_{timestamp_run}_{index + 1}.docx"
-                    st.session_state.generated_reports[output_filename] = doc_buffer.getvalue()
-
-                    # Update the 'processed' column in the DataFrame
-                    st.session_state.excel_data.loc[index, 'processed'] = output_filename
-                    st.session_state.processed_count += 1
-
-                if st.session_state.processed_count > 0:
-                    st.success(f"Generated {st.session_state.processed_count} reports. Skipped {st.session_state.skipped_count} previously processed rows (out of {st.session_state.total_rows} total).")
-                else:
-                    st.warning(f"No new reports generated. All {st.session_state.total_rows} rows were already marked as processed or the file was empty.")
-
-                # Create zip file (after individual reports are generated)
-                if st.session_state.generated_reports:
-                    zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                        for filename, report_bytes in st.session_state.generated_reports.items():
-                            zip_file.writestr(filename, report_bytes)
-                    st.session_state.generated_zip_bytes = zip_buffer.getvalue()
-                    st.session_state.generated_zip_filename = f"generated_reports_{timestamp_run}.zip"
-
-                # Save the updated DataFrame to a new Excel file
-                excel_bytes_output = io.BytesIO()
-                st.session_state.excel_data.to_excel(excel_bytes_output, index=False)
-                excel_bytes_output.seek(0)
-                st.session_state.updated_excel_bytes = excel_bytes_output.getvalue()
+            # Check for 'processed' column, add if missing
+            if 'processed' not in df.columns:
+                add_log("Adding 'processed' column (not found in Excel)")
+                df['processed'] = ''
+            else:
+                add_log("Found existing 'processed' column")
                 
-                # Create a filename for the updated Excel file
-                filename_parts = original_filename.rsplit('.', 1)
-                base_name = filename_parts[0]
-                extension = filename_parts[1] if len(filename_parts) > 1 else 'xlsx'
-                st.session_state.updated_excel_filename = f"{base_name}_updated_{timestamp_run}.{extension}"
+            # Ensure 'processed' is string type to handle various empty values consistently
+            df['processed'] = df['processed'].fillna('').astype(str)
+
+            # Store the original excel data in session state
+            st.session_state.excel_data = df.copy()
+
+            # Load template bytes once
+            add_log(f"Loading Word template: {uploaded_template.name}")
+            status_area.info("Loading Word template...")
+            template_bytes = io.BytesIO(uploaded_template.getvalue())
+
+            # Generate individual reports and store them
+            timestamp_run = datetime.now().strftime("%Y%m%d_%H%M%S")
+            add_log(f"Starting report generation with timestamp: {timestamp_run}")
+            
+            # Create a progress bar
+            progress_bar = st.progress(0)
+            
+            for index, row in df.iterrows():
+                # Update status with current row
+                progress_percent = int((index / len(df)) * 100)
+                progress_bar.progress(progress_percent)
+                status_area.info(f"Processing row {index + 1} of {len(df)} ({progress_percent}%)...")
+                
+                # Check if row should be processed
+                if row['processed'] != '':
+                    add_log(f"Row {index + 1}: Skipped (already processed as '{row['processed']}')")
+                    st.session_state.skipped_count += 1
+                    continue  # Skip if 'processed' column is not empty
+
+                # Show what data we're processing
+                row_data = row.to_dict()
+                sample_data = {k: v for i, (k, v) in enumerate(row_data.items()) if i < 3}  # Show first 3 fields
+                add_log(f"Row {index + 1}: Processing data {sample_data}...")
+                
+                # Load a fresh template instance for each report
+                template_bytes.seek(0)  # Reset stream position
+                document = Document(template_bytes)
+                add_log(f"Row {index + 1}: Replacing fields in template")
+                report_doc = replace_fields(document, row.to_dict())
+
+                # Save the generated document to a temporary byte stream
+                doc_buffer = io.BytesIO()
+                report_doc.save(doc_buffer)
+                doc_buffer.seek(0)
+
+                # Store the generated report
+                output_filename = f"report_{timestamp_run}_{index + 1}.docx"
+                add_log(f"Row {index + 1}: Generated report '{output_filename}'")
+                st.session_state.generated_reports[output_filename] = doc_buffer.getvalue()
+
+                # Update the 'processed' column in the DataFrame
+                st.session_state.excel_data.loc[index, 'processed'] = output_filename
+                st.session_state.processed_count += 1
+
+            # Complete the progress bar
+            progress_bar.progress(100)
+            
+            if st.session_state.processed_count > 0:
+                status_message = f"Generated {st.session_state.processed_count} reports. Skipped {st.session_state.skipped_count} previously processed rows (out of {st.session_state.total_rows} total)."
+                status_area.success(status_message)
+                add_log(status_message)
+            else:
+                status_message = f"No new reports generated. All {st.session_state.total_rows} rows were already marked as processed or the file was empty."
+                status_area.warning(status_message)
+                add_log(status_message)
+
+            # Create zip file (after individual reports are generated)
+            if st.session_state.generated_reports:
+                add_log("Creating ZIP file with all generated reports")
+                status_area.info("Creating ZIP file...")
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for filename, report_bytes in st.session_state.generated_reports.items():
+                        zip_file.writestr(filename, report_bytes)
+                st.session_state.generated_zip_bytes = zip_buffer.getvalue()
+                st.session_state.generated_zip_filename = f"generated_reports_{timestamp_run}.zip"
+                add_log(f"ZIP file created: {st.session_state.generated_zip_filename}")
+
+            # Save the updated DataFrame to a new Excel file
+            add_log("Updating Excel file with processing status")
+            status_area.info("Saving updated Excel file...")
+            excel_bytes_output = io.BytesIO()
+            st.session_state.excel_data.to_excel(excel_bytes_output, index=False)
+            excel_bytes_output.seek(0)
+            st.session_state.updated_excel_bytes = excel_bytes_output.getvalue()
+            
+            # Create a filename for the updated Excel file
+            filename_parts = original_filename.rsplit('.', 1)
+            base_name = filename_parts[0]
+            extension = filename_parts[1] if len(filename_parts) > 1 else 'xlsx'
+            st.session_state.updated_excel_filename = f"{base_name}_updated_{timestamp_run}.{extension}"
+            add_log(f"Updated Excel file created: {st.session_state.updated_excel_filename}")
+            
+            # Final status update
+            status_area.success("Processing complete! You can download the generated files below.")
 
         except Exception as e:
             st.error(f"An error occurred during report generation: {e}")
