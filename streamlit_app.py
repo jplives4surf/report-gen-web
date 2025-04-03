@@ -362,7 +362,7 @@ with tab1:
 # --- Tab 2: Create Intake XLS ---
 with tab2:
     st.header("Create Intake Excel Template")
-    st.info("This section allows you to create a blank Excel template based on the placeholders found in a Word document.")
+    st.info("This section allows you to create a blank Excel template based on the placeholders found in a Word document. It will create [variables] from info within brackets.")
 
     uploaded_template_for_xls = st.file_uploader("Upload Word Template to Extract Placeholders (.docx)", type="docx", key="uploaded_template_xls")
 
